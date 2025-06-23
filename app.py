@@ -338,3 +338,74 @@ st.title("DEBUG: Hello, Streamlit!")
 st.write("Current directory:", os.getcwd())
 st.write("Files:", os.listdir("."))
 
+import streamlit as st
+import pandas as pd
+import numpy as np
+from PIL import Image, ImageDraw
+
+st.set_page_config(page_title="BMI & Stroke Visual", layout="centered")
+st.title("BMI Silhouette: Stroke Risk Visualizer")
+
+# ---- 1. LOAD DATA ----
+df = pd.read_csv("healthcare-dataset-stroke-data.csv")
+df.columns = df.columns.str.strip().str.lower()  # Standardize to lowercase
+
+# ---- 2. FILTER OUT INVALID DATA ----
+df = df[df['gender'].isin(['Male', 'Female'])]           # Remove 'Other'
+df = df[(df['bmi'] < 60) & (df['bmi'] > 10)]            # Filter extreme BMI
+df = df[(df['avg_glucose_level'] < 250) & (df['avg_glucose_level'] > 40)]  # Filter glucose
+
+# ---- 3. DEFINE BINS AND IMAGES ----
+bmi_bins = [0, 18.5, 24.9, 29.9, 34.9, 100]
+bmi_labels = ['Underweight', 'Normal', 'Overweight', 'Obese I', 'Obese II+']
+fig_paths = [f"bmi_fig_{i+1}.png" for i in range(5)]  # Images: bmi_fig_1.png ... bmi_fig_5.png
+
+df['bmi_bin'] = pd.cut(df['bmi'], bins=bmi_bins, labels=False, include_lowest=True)
+bmi_stroke = df.groupby('bmi_bin')['stroke'].mean().fillna(0)
+
+# ---- 4. BMI SLIDER ----
+bmi_value = st.slider("Select BMI", 15.0, 45.0, 24.0, step=0.1)
+bmi_bin = np.digitize([bmi_value], bmi_bins)[0] - 1
+bmi_bin = min(max(bmi_bin, 0), 4)  # Clamp to valid bin range (0-4)
+
+# ---- 5. LOAD THE RIGHT IMAGE ----
+img_path = fig_paths[bmi_bin]
+try:
+    img = Image.open(img_path).convert("RGBA")
+except Exception as e:
+    st.error(f"Image {img_path} not found. Error: {e}")
+    st.stop()
+
+# ---- 6. STROKE RISK FOR THIS BMI BIN ----
+risk = bmi_stroke.iloc[bmi_bin]
+risk_percent = float(risk) * 100
+
+# ---- 7. DRAW "WATER LEVEL" (STROKE RISK) ON IMAGE ----
+def fill_image_with_water(img, fill_percent):
+    img = img.copy()
+    w, h = img.size
+    mask = Image.new("L", (w, h), 0)
+    # Water level: fill from bottom up according to risk %
+    water_height = int(h * (fill_percent / 100))
+    draw = ImageDraw.Draw(mask)
+    draw.rectangle([0, h - water_height, w, h], fill=120)
+    blue = Image.new("RGBA", (w, h), (60, 120, 255, 128))
+    img.paste(blue, mask=mask)
+    return img
+
+filled_img = fill_image_with_water(img, risk_percent)
+category = bmi_labels[bmi_bin]
+
+# ---- 8. DISPLAY ----
+st.image(filled_img, caption=f"{category} (BMI {bmi_value:.1f}) — Stroke Risk: {risk_percent:.2f}%", use_column_width=False)
+st.caption("Silhouette matches BMI category. Blue fill = stroke probability for this BMI group.")
+
+# ---- 9. OPTIONAL: SHOW STROKE RISK TABLE FOR ALL BINS ----
+with st.expander("Show stroke risk by BMI category"):
+    result = pd.DataFrame({
+        "BMI Category": bmi_labels,
+        "Stroke Risk (%)": [f"{x*100:.2f}" for x in bmi_stroke]
+    })
+    st.table(result)
+
+
