@@ -157,57 +157,47 @@ def load_data():
     return df
 df = load_data()
 
-st.title("BMI Silhouette & Stroke Rate Explorer")
+import streamlit as st
 
-# --- Sidebar Filters ---
-gender = st.sidebar.radio("Gender", options=['Male', 'Female'], horizontal=True)
-age_group_labels = df['age_group'].cat.categories.tolist()
-age_group = st.sidebar.selectbox("Age Group", options=age_group_labels, index=2)  # default to Adult
+st.title("BMI Human Visualizer")
 
-# --- Filter DataFrame ---
-group_df = df[(df['gender'] == gender) & (df['age_group'] == age_group)]
+# Gender selection
+gender_options = ['Both', 'Male', 'Female']
+gender_choice = st.radio("Gender", gender_options, horizontal=True)
 
-# --- Get Mean BMI and Stroke Rate ---
-mean_bmi = group_df['bmi'].mean()
-stroke_rate = group_df['stroke'].mean() * 100 if len(group_df) > 0 else 0
+# BMI slider
+bmi = st.slider("Select BMI value", min_value=15.0, max_value=45.0, value=23.0, step=0.1)
 
-# --- Silhouette Color by Gender ---
-color = "#90caf9" if gender == "Male" else "#F48FB1"
-
-# --- Generate SVG Silhouette ---
 def get_svg(bmi_value, color):
-    width_factor = (bmi_value - 15) / (40 - 15)
-    base_width = 100
-    morph_width = int(base_width + width_factor * 60)
+    width_factor = (bmi_value - 15) / (45 - 15)
+    base_width = 80
+    morph_width = int(base_width + width_factor * 80)  # Doubles width from min to max
     svg = f"""
     <svg width="{morph_width}" height="250" viewBox="0 0 160 250" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <ellipse cx="{morph_width//2}" cy="70" rx="{morph_width//4}" ry="45" fill="{color}" />
-      <rect x="{morph_width//2-18}" y="110" width="{36+width_factor*36}" height="70" rx="25" fill="{color}"/>
-      <rect x="{morph_width//2-32}" y="140" width="{20+width_factor*24}" height="70" rx="20" fill="{color}"/>
-      <rect x="{morph_width//2+12}" y="140" width="{20+width_factor*24}" height="70" rx="20" fill="{color}"/>
-      <rect x="{morph_width//2-16}" y="180" width="{13+width_factor*10}" height="60" rx="8" fill="{color}"/>
-      <rect x="{morph_width//2+3}" y="180" width="{13+width_factor*10}" height="60" rx="8" fill="{color}"/>
+      <ellipse cx="{morph_width//2}" cy="55" rx="{morph_width//4}" ry="35" fill="{color}" />
+      <rect x="{morph_width//2-18}" y="90" width="{36+width_factor*46}" height="80" rx="32" fill="{color}"/>
+      <rect x="{morph_width//2-32}" y="120" width="{20+width_factor*30}" height="70" rx="20" fill="{color}"/>
+      <rect x="{morph_width//2+12}" y="120" width="{20+width_factor*30}" height="70" rx="20" fill="{color}"/>
+      <rect x="{morph_width//2-16}" y="170" width="{13+width_factor*15}" height="65" rx="10" fill="{color}"/>
+      <rect x="{morph_width//2+3}" y="170" width="{13+width_factor*15}" height="65" rx="10" fill="{color}"/>
     </svg>
     """
     return svg
 
-# --- Display Section ---
-st.subheader(f"Mean BMI Silhouette for {gender} ({age_group})")
-if len(group_df) == 0 or pd.isna(mean_bmi):
-    st.warning("No data for this group.")
-else:
-    svg = get_svg(mean_bmi, color)
-    st.markdown(f"<div style='text-align:center'>{svg}</div>", unsafe_allow_html=True)
-    st.markdown(f"<h3 style='text-align:center;'>Mean BMI: <span style='color:{color}'>{mean_bmi:.1f}</span></h3>", unsafe_allow_html=True)
-    st.markdown(f"<h4 style='text-align:center;'>Stroke Rate: <span style='color:#ba1a1a'>{stroke_rate:.2f}%</span></h4>", unsafe_allow_html=True)
-    st.caption("Silhouette width reflects group mean BMI. Stroke rate is shown in red. Color indicates gender.")
+st.markdown("---")
 
-# --- (Optional) Add legend for BMI ranges and colors ---
-st.markdown("""
-**Legend:**  
-- <span style='color:#90caf9'>Blue</span> = Male  
-- <span style='color:#F48FB1'>Pink</span> = Female  
-- Silhouette width = average BMI of the selected group  
-- Red = Stroke Rate  
-""", unsafe_allow_html=True)
+if gender_choice == 'Both':
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("<center><b>Male</b></center>", unsafe_allow_html=True)
+        st.markdown(get_svg(bmi, "#90caf9"), unsafe_allow_html=True)
+    with col2:
+        st.markdown("<center><b>Female</b></center>", unsafe_allow_html=True)
+        st.markdown(get_svg(bmi, "#F48FB1"), unsafe_allow_html=True)
+elif gender_choice == 'Male':
+    st.markdown(get_svg(bmi, "#90caf9"), unsafe_allow_html=True)
+elif gender_choice == 'Female':
+    st.markdown(get_svg(bmi, "#F48FB1"), unsafe_allow_html=True)
 
+st.markdown(f"<center><h3>BMI: {bmi:.1f}</h3></center>", unsafe_allow_html=True)
+st.caption("Use the slider to see how BMI changes the body silhouette. Filter gender to see a male or female figure. This visualization is for educational purposes.")
