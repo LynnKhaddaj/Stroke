@@ -240,7 +240,6 @@ with col2:
 
 ## **2. “Smoking” Visual: Cigarette Emoji as Status**
 
-Here’s the creative, immediately understandable visual:
 
 ```python
 st.title("Smoking Status & Stroke Risk")
