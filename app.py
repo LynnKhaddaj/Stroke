@@ -60,30 +60,19 @@ except Exception as e:
 
 if sample_size < 10:
     st.warning("Low sample size in this BMI group! Interpret risk cautiously.")
+import streamlit as st
+import os
 
-# --- SMOKING STATUS & STROKE RISK ---
-st.header("2. Stroke Risk by Smoking Status (with Icons)")
 smoking_icons = {
     "never smoked": "cigarette_never.png",
     "smokes": "cigarette_smokes.png",
     "formerly smoked": "cigarette_former.png"
 }
-smoking_risk = df.groupby('smoking_status')['stroke'].agg(['mean', 'count']).reindex(['never smoked', 'smokes', 'formerly smoked'])
-cols = st.columns(3)
-for i, status in enumerate(['never smoked', 'smokes', 'formerly smoked']):
-    with cols[i]:
-        iconfile = smoking_icons[status]
-        if os.path.exists(iconfile):
-            st.image(iconfile, width=60)
-        else:
-            st.write("🚬")
-        risk = smoking_risk.loc[status, 'mean'] if status in smoking_risk.index else 0
-        n = int(smoking_risk.loc[status, 'count']) if status in smoking_risk.index else 0
-        st.metric(status.replace('_', ' ').title(), f"{risk*100:.2f}%")
-        st.caption(f"n={n}")
-        if n < 10:
-            st.warning("Few cases, risk may not be reliable.")
+
+# Calculate stroke risk and counts per group
 smoking_risk = df.groupby('smoking_status')['stroke'].agg(['mean', 'count', 'sum']).reindex(['never smoked', 'smokes', 'formerly smoked'])
+
+st.header("Stroke Risk by Smoking Status")
 cols = st.columns(3)
 for i, status in enumerate(['never smoked', 'smokes', 'formerly smoked']):
     with cols[i]:
