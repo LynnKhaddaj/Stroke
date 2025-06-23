@@ -111,10 +111,6 @@ with col6:
     st.pyplot(fig6)
     plt.close(fig6)
 
-# --- SMALL FOOTER ---
-st.markdown("---")
-st.markdown("<center><i>All visuals are group-level, not individual predictions. Dashboard by ChatGPT.</i></center>", unsafe_allow_html=True)
-
     _Sample sizes for rare subgroups are small—interpret with care!_
     """)
 
