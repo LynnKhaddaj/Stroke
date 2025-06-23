@@ -4,6 +4,8 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
+pip install pillow
+
 
 st.set_page_config(page_title="WAW Stroke Dashboard", layout="wide")
 
@@ -278,7 +280,7 @@ df = load_data()
 # Define 5 bins and images
 bmi_bins = [0, 18.5, 24.9, 29.9, 34.9, 100]
 bmi_labels = ['Underweight', 'Normal', 'Overweight', 'Obese I', 'Obese II+']
-fig_paths = [f"images/bmi_fig_{i+1}.png" for i in range(5)]  # You provide 5 images
+fig_paths = [f"bmi_fig_{i+1}.png" for i in range(5)]  # You provide 5 images
 
 df['bmi_bin'] = pd.cut(df['bmi'], bins=bmi_bins, labels=False, include_lowest=True)
 bmi_stroke = df.groupby('bmi_bin')['stroke'].mean().fillna(0)
