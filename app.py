@@ -329,3 +329,12 @@ try:
     st.image("bmi_fig_1.png", caption="Test BMI Image 1", use_column_width=True)
 except Exception as e:
     st.error(f"Error displaying image: {e}")
+
+    import streamlit as st
+import os
+
+st.title("DEBUG: Hello, Streamlit!")
+
+st.write("Current directory:", os.getcwd())
+st.write("Files:", os.listdir("."))
+
