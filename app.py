@@ -236,8 +236,6 @@ with col2:
                 unsafe_allow_html=True)
     st.caption("The silhouette width matches BMI. The colored fill inside represents the group stroke risk at that BMI.")
 
----
-
 ## **2. “Smoking” Visual: Cigarette Emoji as Status**
 
 
