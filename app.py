@@ -14,19 +14,13 @@ df = df[df['gender'].isin(['male', 'female'])]
 df = df[(df['bmi'] > 10) & (df['bmi'] < 60)]  # relaxed filtering
 df = df[(df['avg_glucose_level'] > 40) & (df['avg_glucose_level'] < 250)]
 
-# --- DATA IMBALANCE WARNING ---
-stroke_rate = df['stroke'].mean() * 100
-st.metric("Overall Stroke Rate in Dataset", f"{stroke_rate:.2f}%")
-st.caption("Warning: Stroke is rare in this data. Interpret group rates with caution!")
-
-# --- BMI STROKE RISK (3 bins, 3 images) ---
-st.header("1. BMI Silhouette: Stroke Risk by BMI Group")
 bmi_bins = [0, 25, 30, 100]
 bmi_labels = ['Normal or Underweight', 'Overweight', 'Obese']
-fig_paths = ["bmi_fig_1.png", "bmi_fig_3.png", "bmi_fig_5.png"]  # thinnest, medium, thickest
+fig_paths = ["bmi_fig_1.png", "bmi_fig_3.png", "bmi_fig_5.png"]
+
 df['bmi_bin'] = pd.cut(df['bmi'], bins=bmi_bins, labels=False, include_lowest=True)
-binned = df.groupby('bmi_bin')['stroke'].agg(['count', 'mean'])
-binned = binned.reindex(range(3), fill_value=0)
+
+binned = df.groupby('bmi_bin')['stroke'].agg(['count', 'sum', 'mean']).reindex(range(3), fill_value=0)
 bmi_value = st.slider("Select BMI", 15.0, 45.0, 24.0, step=0.1)
 bmi_bin = np.digitize([bmi_value], bmi_bins)[0] - 1
 bmi_bin = min(max(bmi_bin, 0), 2)
@@ -35,6 +29,12 @@ category = bmi_labels[bmi_bin]
 risk = binned['mean'].iloc[bmi_bin]
 risk_percent = float(risk) * 100
 sample_size = binned['count'].iloc[bmi_bin]
+stroke_count = binned['sum'].iloc[bmi_bin]
+
+st.write(f"Sample size in this bin: {sample_size}, Stroke cases: {stroke_count}")
+
+# (rest of image/water code unchanged)
+
 
 def fill_image_with_water(img, fill_percent):
     img = img.copy()
@@ -81,6 +81,22 @@ for i, status in enumerate(['never smoked', 'smokes', 'formerly smoked']):
         n = int(smoking_risk.loc[status, 'count']) if status in smoking_risk.index else 0
         st.metric(status.replace('_', ' ').title(), f"{risk*100:.2f}%")
         st.caption(f"n={n}")
+        if n < 10:
+            st.warning("Few cases, risk may not be reliable.")
+smoking_risk = df.groupby('smoking_status')['stroke'].agg(['mean', 'count', 'sum']).reindex(['never smoked', 'smokes', 'formerly smoked'])
+cols = st.columns(3)
+for i, status in enumerate(['never smoked', 'smokes', 'formerly smoked']):
+    with cols[i]:
+        iconfile = smoking_icons[status]
+        if os.path.exists(iconfile):
+            st.image(iconfile, width=60)
+        else:
+            st.write("🚬")
+        mean_risk = smoking_risk.loc[status, 'mean'] if status in smoking_risk.index else 0
+        n = int(smoking_risk.loc[status, 'count']) if status in smoking_risk.index else 0
+        n_strokes = int(smoking_risk.loc[status, 'sum']) if status in smoking_risk.index else 0
+        st.metric(status.replace('_', ' ').title(), f"{mean_risk*100:.2f}%")
+        st.write(f"Strokes: {n_strokes} / {n}")
         if n < 10:
             st.warning("Few cases, risk may not be reliable.")
 
