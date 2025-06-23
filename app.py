@@ -158,46 +158,110 @@ def load_data():
 df = load_data()
 
 import streamlit as st
+import streamlit as st
+import pandas as pd
+import numpy as np
 
-st.title("BMI Human Visualizer")
+# -- Load your cleaned data, use df as in earlier code
+@st.cache_data
+def load_data():
+    df = pd.read_csv('healthcare-dataset-stroke-data.csv')
+    df = df[df['gender'].isin(['Male', 'Female'])]
+    df = df[df['bmi'] < 60]
+    df = df[df['avg_glucose_level'] < 250]
+    return df
+df = load_data()
 
-# Gender selection
-gender_options = ['Both', 'Male', 'Female']
-gender_choice = st.radio("Gender", gender_options, horizontal=True)
+# -- Bin BMI and calculate stroke risk by BMI bin
+bmi_bins = np.arange(15, 45.1, 2)
+df['bmi_bin'] = pd.cut(df['bmi'], bins=bmi_bins)
+bmi_stroke = df.groupby('bmi_bin')['stroke'].mean()
+bmi_bin_centers = [interval.left + 1 for interval in bmi_stroke.index]
 
-# BMI slider
-bmi = st.slider("Select BMI value", min_value=15.0, max_value=45.0, value=23.0, step=0.1)
+# -- User controls BMI and gender
+st.title("BMI Silhouette: Stroke Risk Visualizer")
 
-def get_svg(bmi_value, color):
+col1, col2 = st.columns([2, 3])
+with col1:
+    gender_select = st.radio("Gender", ['Both', 'Male', 'Female'], horizontal=True)
+    bmi_value = st.slider("Select BMI", 15.0, 45.0, 24.0, step=0.5)
+with col2:
+    # -- Get stroke probability at selected BMI (optionally by gender)
+    bin_index = np.digitize(bmi_value, bmi_bins) - 1
+    if gender_select == "Both":
+        risk = bmi_stroke.iloc[bin_index] if bin_index < len(bmi_stroke) else 0
+    else:
+        subset = df[df['gender'] == gender_select]
+        bmi_stroke_gender = subset.groupby('bmi_bin')['stroke'].mean()
+        risk = bmi_stroke_gender.iloc[bin_index] if bin_index < len(bmi_stroke_gender) else 0
+
+    risk_percent = 0 if pd.isna(risk) else risk * 100
+
+    # -- Morph width, but keep head/arms proportional so figure isn't deformed
     width_factor = (bmi_value - 15) / (45 - 15)
-    base_width = 80
-    morph_width = int(base_width + width_factor * 80)  # Doubles width from min to max
+    base_width = 90
+    morph_width = int(base_width + width_factor * 70)  # Head/body width
+    fill_height = int(160 * (risk_percent / 100))  # Fill proportionally to stroke rate
+
+    # Gender color
+    color = "#90caf9" if gender_select == "Male" else "#F48FB1" if gender_select == "Female" else "#ba99ff"
+
+    # Stroke fill color: blue <20%, purple 20-50%, red >50%
+    fill_color = "#90caf9" if risk_percent < 20 else "#bb55ff" if risk_percent < 50 else "#b71c1c"
+
+    # SVG for body, with risk “water level” fill
     svg = f"""
-    <svg width="{morph_width}" height="250" viewBox="0 0 160 250" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <ellipse cx="{morph_width//2}" cy="55" rx="{morph_width//4}" ry="35" fill="{color}" />
-      <rect x="{morph_width//2-18}" y="90" width="{36+width_factor*46}" height="80" rx="32" fill="{color}"/>
-      <rect x="{morph_width//2-32}" y="120" width="{20+width_factor*30}" height="70" rx="20" fill="{color}"/>
-      <rect x="{morph_width//2+12}" y="120" width="{20+width_factor*30}" height="70" rx="20" fill="{color}"/>
-      <rect x="{morph_width//2-16}" y="170" width="{13+width_factor*15}" height="65" rx="10" fill="{color}"/>
-      <rect x="{morph_width//2+3}" y="170" width="{13+width_factor*15}" height="65" rx="10" fill="{color}"/>
+    <svg width="{morph_width}" height="240" viewBox="0 0 160 240" xmlns="http://www.w3.org/2000/svg">
+      <!-- Fill (risk “water” tank) -->
+      <rect x="{morph_width//2-27}" y="{220-fill_height}" width="{54}" height="{fill_height}" rx="22"
+        fill="{fill_color}" opacity="0.5"/>
+      <!-- Head -->
+      <ellipse cx="{morph_width//2}" cy="48" rx="{morph_width//5}" ry="28" fill="{color}" />
+      <!-- Body -->
+      <rect x="{morph_width//2-27}" y="70" width="54" height="110" rx="27" fill="{color}"/>
+      <!-- Arms -->
+      <rect x="{morph_width//2-56}" y="85" width="27" height="75" rx="16" fill="{color}"/>
+      <rect x="{morph_width//2+29}" y="85" width="27" height="75" rx="16" fill="{color}"/>
+      <!-- Legs -->
+      <rect x="{morph_width//2-21}" y="175" width="18" height="50" rx="8" fill="{color}"/>
+      <rect x="{morph_width//2+3}" y="175" width="18" height="50" rx="8" fill="{color}"/>
+      <!-- Outline for clarity -->
+      <rect x="{morph_width//2-27}" y="70" width="54" height="110" rx="27" fill="none" stroke="#333" stroke-width="2"/>
     </svg>
     """
-    return svg
 
-st.markdown("---")
+    st.markdown(f"<center>{svg}</center>", unsafe_allow_html=True)
+    st.markdown(f"<center><h2>BMI: {bmi_value:.1f}</h2>"
+                f"<h3>Stroke Risk: <span style='color:{fill_color}'>{risk_percent:.2f}%</span></h3></center>",
+                unsafe_allow_html=True)
+    st.caption("The silhouette width matches BMI. The colored fill inside represents the group stroke risk at that BMI.")
 
-if gender_choice == 'Both':
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("<center><b>Male</b></center>", unsafe_allow_html=True)
-        st.markdown(get_svg(bmi, "#90caf9"), unsafe_allow_html=True)
-    with col2:
-        st.markdown("<center><b>Female</b></center>", unsafe_allow_html=True)
-        st.markdown(get_svg(bmi, "#F48FB1"), unsafe_allow_html=True)
-elif gender_choice == 'Male':
-    st.markdown(get_svg(bmi, "#90caf9"), unsafe_allow_html=True)
-elif gender_choice == 'Female':
-    st.markdown(get_svg(bmi, "#F48FB1"), unsafe_allow_html=True)
+---
 
-st.markdown(f"<center><h3>BMI: {bmi:.1f}</h3></center>", unsafe_allow_html=True)
-st.caption("Use the slider to see how BMI changes the body silhouette. Filter gender to see a male or female figure. This visualization is for educational purposes.")
+## **2. “Smoking” Visual: Cigarette Emoji as Status**
+
+Here’s the creative, immediately understandable visual:
+
+```python
+st.title("Smoking Status & Stroke Risk")
+
+def cigarette_svg(lit=False, smoked=False):
+    # Base body of cigarette
+    body = f'<rect x="20" y="30" width="120" height="20" rx="8" fill="#F5DEB3" stroke="#A0522D" stroke-width="3"/>'
+    # Lit tip or not
+    tip = ('<circle cx="140" cy="40" r="10" fill="#B22222"/>' if lit
+           else '<circle cx="140" cy="40" r="10" fill="#F5DEB3" stroke="#A0522D" stroke-width="3"/>')
+    # Ash (burnt) effect if smoked
+    ash = ('<rect x="80" y="33" width="60" height="14" fill="#666" opacity="0.6"/>' if smoked else '')
+    return f'<svg width="180" height="70" xmlns="http://www.w3.org/2000/svg">{body}{tip}{ash}</svg>'
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.markdown("<center><b>Never Smoked</b></center>", unsafe_allow_html=True)
+    st.markdown(f"<center>{cigarette_svg(lit=False, smoked=False)}</center>", unsafe_allow_html=True)
+with col2:
+    st.markdown("<center><b>Smokes</b></center>", unsafe_allow_html=True)
+    st.markdown(f"<center>{cigarette_svg(lit=True, smoked=True)}</center>", unsafe_allow_html=True)
+with col3:
+    st.markdown("<center><b>Formerly Smoked</b></center>", unsafe_allow_html=True)
+    st.markdown(f"<center>{cigarette_svg(lit=False, smoked=True)}</center>", unsafe_allow_html=True)
