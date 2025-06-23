@@ -1,411 +1,154 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
+from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
-pip install pillow
 
+st.set_page_config(page_title="Stroke Risk Interactive Dashboard", layout="wide")
 
-st.set_page_config(page_title="WAW Stroke Dashboard", layout="wide")
-
-# -------- LOAD AND CLEAN DATA --------
-@st.cache_data
-def load_data():
-    df = pd.read_csv('healthcare-dataset-stroke-data.csv')
-    df = df[df['gender'].isin(['Male', 'Female'])]      # Remove 'Other'
-    df = df[df['bmi'] < 60]                             # Remove impossible BMI
-    df = df[df['avg_glucose_level'] < 250]              # Remove impossible glucose
-    df['age_group'] = pd.cut(df['age'], [0, 18, 40, 60, 82],
-                            labels=['Child', 'Young Adult', 'Adult', 'Senior'])
-    return df
-
-df = load_data()
-
-# -------- SIDEBAR FILTERS --------
-st.sidebar.header("Filters")
-gender = st.sidebar.multiselect("Gender", options=df["gender"].unique(), default=list(df["gender"].unique()))
-age_group_labels = df['age_group'].cat.categories.tolist()
-age_group = st.sidebar.multiselect("Age Group", options=age_group_labels, default=age_group_labels)
-smoking = st.sidebar.multiselect(
-    "Smoking Status",
-    options=[x for x in df["smoking_status"].unique() if x != "Unknown"],
-    default=[x for x in df["smoking_status"].unique() if x != "Unknown"]
-)
-
-df_filtered = df[
-    df["gender"].isin(gender) &
-    df["age_group"].isin(age_group) &
-    df["smoking_status"].isin(smoking)
-]
-
-# -------- KPI CARDS --------
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total Patients", len(df_filtered))
-col2.metric("Stroke Rate (%)", f"{df_filtered['stroke'].mean()*100:.2f}")
-col3.metric("Avg Age", f"{df_filtered['age'].mean():.1f}")
-col4.metric("Hypertension Rate (%)", f"{df_filtered['hypertension'].mean()*100:.2f}")
-
-# -------- 1. GAUGE: STROKE RATE --------
-stroke_pct = df_filtered['stroke'].mean() * 100
-fig_gauge = go.Figure(go.Indicator(
-    mode="gauge+number",
-    value=stroke_pct,
-    title={'text': "Stroke Rate (%)"},
-    gauge={'axis': {'range': [0, 10]},  # Make gauge sensitive for your rare event!
-           'bar': {'color': "purple"}}
-))
-st.plotly_chart(fig_gauge, use_container_width=True)
-
-# -------- 2. POPULATION PYRAMID (AGE & GENDER) --------
-age_bins = pd.cut(df_filtered['age'], bins=range(0, 90, 10), right=False)
-age_gender = df_filtered.groupby([age_bins, 'gender']).size().unstack(fill_value=0)
-
-fig_pyramid = go.Figure()
-fig_pyramid.add_trace(go.Bar(y=age_gender.index.astype(str), x=age_gender['Male'], name='Male', orientation='h'))
-fig_pyramid.add_trace(go.Bar(y=age_gender.index.astype(str), x=-age_gender['Female'], name='Female', orientation='h'))
-fig_pyramid.update_layout(title='Population Pyramid: Age and Gender', barmode='overlay',
-                         xaxis=dict(tickvals=[-300, -200, -100, 0, 100, 200, 300],
-                                    ticktext=[300, 200, 100, 0, 100, 200, 300]))
-st.plotly_chart(fig_pyramid, use_container_width=True)
-
-# -------- 3. BMI ZONES (COLOR BAND BAR) --------
-st.markdown("### BMI Zones")
-fig, ax = plt.subplots(figsize=(8, 2))
-colors = ['#ADD8E6', '#90EE90', '#FFD700', '#FF6347']  # blue, green, yellow, red
-ranges = [10, 18.5, 25, 30, 60]
-labels = ['Underweight', 'Healthy', 'Overweight', 'Obese']
-for i in range(len(colors)):
-    ax.barh(0, ranges[i+1]-ranges[i], left=ranges[i], color=colors[i], edgecolor='black', height=0.5)
-mean_bmi = df_filtered['bmi'].mean()
-ax.scatter(mean_bmi, 0, color='black', zorder=5, s=100)
-ax.text(mean_bmi+0.5, 0.05, f'Mean BMI: {mean_bmi:.1f}', color='black')
-ax.set_xlim(10, 50)
-ax.set_yticks([])
-ax.set_title("BMI Zones with Mean BMI")
-for i in range(len(labels)):
-    ax.text((ranges[i]+ranges[i+1])/2, 0.2, labels[i], ha='center')
-st.pyplot(fig)
-
-# -------- 4. SANKEY: HYPERTENSION → STROKE --------
-label = ["All", "Hypertensive", "Stroke"]
-source = [0, 1]
-target = [1, 2]
-value = [
-    df_filtered["hypertension"].sum(),
-    df_filtered[(df_filtered["hypertension"] == 1) & (df_filtered["stroke"] == 1)].shape[0]
-]
-fig_sankey = go.Figure(go.Sankey(
-    node=dict(label=label),
-    link=dict(source=source, target=target, value=value)
-))
-fig_sankey.update_layout(title="Risk Funnel: Hypertension and Stroke")
-st.plotly_chart(fig_sankey, use_container_width=True)
-
-# -------- 5. TREEMAP: AGE GROUP, SMOKING, STROKE --------
-fig_tree = px.treemap(df_filtered,
-                      path=['age_group', 'smoking_status', 'stroke'],
-                      title="Treemap: Age Group, Smoking Status, and Stroke")
-st.plotly_chart(fig_tree, use_container_width=True)
-
-# -------- 6. PATIENT PROFILE CARD --------
-st.markdown("### Random Patient Profile")
-random_patient = df_filtered.sample(1).iloc[0]
-st.info(
-    f"""
-    **Gender:** {random_patient['gender']}  
-    **Age:** {random_patient['age']}  
-    **BMI:** {random_patient['bmi']:.1f}  
-    **Hypertension:** {'Yes' if random_patient['hypertension'] else 'No'}  
-    **Smoking Status:** {random_patient['smoking_status']}  
-    **Stroke:** {'Yes' if random_patient['stroke'] else 'No'}
-    """
-)
-
-# -------- 7. CORRELATION HEATMAP (PLOTLY) --------
-st.markdown("### Correlation Matrix")
-import plotly.figure_factory as ff
-numeric_df = df_filtered.select_dtypes(include='number')
-corr = numeric_df.corr()
-fig_heat = ff.create_annotated_heatmap(
-    z=np.array(corr),
-    x=list(corr.columns),
-    y=list(corr.index),
-    annotation_text=corr.round(2).astype(str).values,
-    colorscale='Viridis'
-)
-st.plotly_chart(fig_heat, use_container_width=True)
-
-# -------- 8. STROKE RATE BY AGE GROUP & SMOKING (HEATMAP TABLE) --------
-st.markdown("### Stroke Rate by Age Group and Smoking Status")
-stroke_rate_table = df_filtered.groupby(['age_group', 'smoking_status'])['stroke'].mean().unstack().style.format("{:.2%}")
-st.dataframe(stroke_rate_table)
-
-# --- (Optional) Add more custom visuals below! ---
-import streamlit as st
-import pandas as pd
-
-# --- Load your filtered DataFrame ---
-# (Assume df is your already-filtered main DataFrame from earlier in app.py)
-
-# For this demo, reload cleaned data (or reuse df_filtered if you have it)
-@st.cache_data
-def load_data():
-    df = pd.read_csv('healthcare-dataset-stroke-data.csv')
-    df = df[df['gender'].isin(['Male', 'Female'])]
-    df = df[df['bmi'] < 60]
-    df = df[df['avg_glucose_level'] < 250]
-    df['age_group'] = pd.cut(df['age'], [0, 18, 40, 60, 82], labels=['Child', 'Young Adult', 'Adult', 'Senior'])
-    return df
-df = load_data()
-
-import streamlit as st
-import streamlit as st
-import pandas as pd
-import numpy as np
-
-# -- Load your cleaned data, use df as in earlier code
-@st.cache_data
-def load_data():
-    df = pd.read_csv('healthcare-dataset-stroke-data.csv')
-    df = df[df['gender'].isin(['Male', 'Female'])]
-    df = df[df['bmi'] < 60]
-    df = df[df['avg_glucose_level'] < 250]
-    return df
-df = load_data()
-
-# -- Bin BMI and calculate stroke risk by BMI bin
-bmi_bins = np.arange(15, 45.1, 2)
-df['bmi_bin'] = pd.cut(df['bmi'], bins=bmi_bins)
-bmi_stroke = df.groupby('bmi_bin')['stroke'].mean()
-bmi_bin_centers = [interval.left + 1 for interval in bmi_stroke.index]
-
-# -- User controls BMI and gender
-st.title("BMI Silhouette: Stroke Risk Visualizer")
-
-col1, col2 = st.columns([2, 3])
-with col1:
-    gender_select = st.radio("Gender", ['Both', 'Male', 'Female'], horizontal=True)
-    bmi_value = st.slider("Select BMI", 15.0, 45.0, 24.0, step=0.5)
-with col2:
-    # -- Get stroke probability at selected BMI (optionally by gender)
-    bin_index = np.digitize(bmi_value, bmi_bins) - 1
-    if gender_select == "Both":
-        risk = bmi_stroke.iloc[bin_index] if bin_index < len(bmi_stroke) else 0
-    else:
-        subset = df[df['gender'] == gender_select]
-        bmi_stroke_gender = subset.groupby('bmi_bin')['stroke'].mean()
-        risk = bmi_stroke_gender.iloc[bin_index] if bin_index < len(bmi_stroke_gender) else 0
-
-    risk_percent = 0 if pd.isna(risk) else risk * 100
-
-    # -- Morph width, but keep head/arms proportional so figure isn't deformed
-    width_factor = (bmi_value - 15) / (45 - 15)
-    base_width = 90
-    morph_width = int(base_width + width_factor * 70)  # Head/body width
-    fill_height = int(160 * (risk_percent / 100))  # Fill proportionally to stroke rate
-
-    # Gender color
-    color = "#90caf9" if gender_select == "Male" else "#F48FB1" if gender_select == "Female" else "#ba99ff"
-
-    # Stroke fill color: blue <20%, purple 20-50%, red >50%
-    fill_color = "#90caf9" if risk_percent < 20 else "#bb55ff" if risk_percent < 50 else "#b71c1c"
-
-    # SVG for body, with risk “water level” fill
-    svg = f"""
-    <svg width="{morph_width}" height="240" viewBox="0 0 160 240" xmlns="http://www.w3.org/2000/svg">
-      <!-- Fill (risk “water” tank) -->
-      <rect x="{morph_width//2-27}" y="{220-fill_height}" width="{54}" height="{fill_height}" rx="22"
-        fill="{fill_color}" opacity="0.5"/>
-      <!-- Head -->
-      <ellipse cx="{morph_width//2}" cy="48" rx="{morph_width//5}" ry="28" fill="{color}" />
-      <!-- Body -->
-      <rect x="{morph_width//2-27}" y="70" width="54" height="110" rx="27" fill="{color}"/>
-      <!-- Arms -->
-      <rect x="{morph_width//2-56}" y="85" width="27" height="75" rx="16" fill="{color}"/>
-      <rect x="{morph_width//2+29}" y="85" width="27" height="75" rx="16" fill="{color}"/>
-      <!-- Legs -->
-      <rect x="{morph_width//2-21}" y="175" width="18" height="50" rx="8" fill="{color}"/>
-      <rect x="{morph_width//2+3}" y="175" width="18" height="50" rx="8" fill="{color}"/>
-      <!-- Outline for clarity -->
-      <rect x="{morph_width//2-27}" y="70" width="54" height="110" rx="27" fill="none" stroke="#333" stroke-width="2"/>
-    </svg>
-    """
-
-    st.markdown(f"<center>{svg}</center>", unsafe_allow_html=True)
-    st.markdown(f"<center><h2>BMI: {bmi_value:.1f}</h2>"
-                f"<h3>Stroke Risk: <span style='color:{fill_color}'>{risk_percent:.2f}%</span></h3></center>",
-                unsafe_allow_html=True)
-    st.caption("The silhouette width matches BMI. The colored fill inside represents the group stroke risk at that BMI.")
-
-## **2. “Smoking” Visual: Cigarette Emoji as Status**
-st.title("Smoking Status & Stroke Risk")
-
-def cigarette_svg(lit=False, smoked=False):
-    # Base body of cigarette
-    body = f'<rect x="20" y="30" width="120" height="20" rx="8" fill="#F5DEB3" stroke="#A0522D" stroke-width="3"/>'
-    # Lit tip or not
-    tip = ('<circle cx="140" cy="40" r="10" fill="#B22222"/>' if lit
-           else '<circle cx="140" cy="40" r="10" fill="#F5DEB3" stroke="#A0522D" stroke-width="3"/>')
-    # Ash (burnt) effect if smoked
-    ash = ('<rect x="80" y="33" width="60" height="14" fill="#666" opacity="0.6"/>' if smoked else '')
-    return f'<svg width="180" height="70" xmlns="http://www.w3.org/2000/svg">{body}{tip}{ash}</svg>'
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown("<center><b>Never Smoked</b></center>", unsafe_allow_html=True)
-    st.markdown(f"<center>{cigarette_svg(lit=False, smoked=False)}</center>", unsafe_allow_html=True)
-with col2:
-    st.markdown("<center><b>Smokes</b></center>", unsafe_allow_html=True)
-    st.markdown(f"<center>{cigarette_svg(lit=True, smoked=True)}</center>", unsafe_allow_html=True)
-with col3:
-    st.markdown("<center><b>Formerly Smoked</b></center>", unsafe_allow_html=True)
-    st.markdown(f"<center>{cigarette_svg(lit=False, smoked=True)}</center>", unsafe_allow_html=True)
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-from PIL import Image, ImageDraw
-
-# ---- Load data and process bins ----
-@st.cache_data
-def load_data():
-    df = pd.read_csv('healthcare-dataset-stroke-data.csv')
-    df = df[df['gender'].isin(['Male', 'Female'])]
-    df = df[df['bmi'] < 60]
-    df = df[df['avg_glucose_level'] < 250]
-    return df
-df = load_data()
-
-# Define 5 bins and images
-bmi_bins = [0, 18.5, 24.9, 29.9, 34.9, 100]
-bmi_labels = ['Underweight', 'Normal', 'Overweight', 'Obese I', 'Obese II+']
-fig_paths = [f"bmi_fig_{i+1}.png" for i in range(5)]  # You provide 5 images
-
-df['bmi_bin'] = pd.cut(df['bmi'], bins=bmi_bins, labels=False, include_lowest=True)
-bmi_stroke = df.groupby('bmi_bin')['stroke'].mean().fillna(0)
-
-# User selects BMI
-bmi_value = st.slider("Select BMI", 15.0, 45.0, 24.0, step=0.1)
-bmi_bin = np.digitize([bmi_value], bmi_bins)[0] - 1
-bmi_bin = min(max(bmi_bin, 0), 4)  # Clamp to [0,4]
-
-# Get figure image for the bin
-img_path = fig_paths[bmi_bin]
-img = Image.open(img_path).convert("RGBA")
-
-# Get stroke rate for this BMI bin
-risk = bmi_stroke.iloc[bmi_bin]
-risk_percent = float(risk) * 100
-
-# Draw "water fill" (blue) up to stroke risk %
-def fill_image_with_water(img, fill_percent):
-    img = img.copy()
-    w, h = img.size
-    mask = Image.new("L", (w, h), 0)
-    water_height = int(h * (fill_percent / 100))
-    draw = ImageDraw.Draw(mask)
-    draw.rectangle([0, h - water_height, w, h], fill=120)
-    blue = Image.new("RGBA", (w, h), (60, 120, 255, 128))
-    img.paste(blue, mask=mask)
-    return img
-
-filled_img = fill_image_with_water(img, risk_percent)
-category = bmi_labels[bmi_bin]
-
-st.image(filled_img, caption=f"{category} (BMI {bmi_value:.1f}) — Stroke Risk: {risk_percent:.2f}%", use_column_width=False)
-st.caption("Silhouette matches BMI category. Blue fill = stroke probability for this BMI bin.")
-
-import streamlit as st
-import os
-
-st.title("Image Test")
-
-# List files in current directory
-st.write("Files in current directory:", os.listdir("."))
-
-# Try to load and display the first image
-try:
-    st.image("bmi_fig_1.png", caption="Test BMI Image 1", use_column_width=True)
-except Exception as e:
-    st.error(f"Error displaying image: {e}")
-
-    import streamlit as st
-import os
-
-st.title("DEBUG: Hello, Streamlit!")
-
-st.write("Current directory:", os.getcwd())
-st.write("Files:", os.listdir("."))
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-from PIL import Image, ImageDraw
-
-st.set_page_config(page_title="BMI & Stroke Visual", layout="centered")
-st.title("BMI Silhouette: Stroke Risk Visualizer")
-
-# ---- 1. LOAD DATA ----
+# ---- 1. LOAD AND CLEAN DATA ----
 df = pd.read_csv("healthcare-dataset-stroke-data.csv")
-df.columns = df.columns.str.strip().str.lower()  # Standardize to lowercase
+df.columns = df.columns.str.strip().str.lower()
+df = df[df['gender'].isin(['male', 'female'])]
+df = df[(df['bmi'] < 60) & (df['bmi'] > 10)]
+df = df[(df['avg_glucose_level'] < 250) & (df['avg_glucose_level'] > 40)]
 
-# ---- 2. FILTER OUT INVALID DATA ----
-df = df[df['gender'].isin(['Male', 'Female'])]           # Remove 'Other'
-df = df[(df['bmi'] < 60) & (df['bmi'] > 10)]            # Filter extreme BMI
-df = df[(df['avg_glucose_level'] < 250) & (df['avg_glucose_level'] > 40)]  # Filter glucose
+# ---- 2. BMI DASHBOARD SECTION ----
+with st.container():
+    st.header("1. Stroke Risk by BMI (Body Silhouette)")
+    bmi_bins = [0, 18.5, 24.9, 29.9, 34.9, 100]
+    bmi_labels = ['Underweight', 'Normal', 'Overweight', 'Obese I', 'Obese II+']
+    fig_paths = [f"bmi_fig_{i+1}.png" for i in range(5)]
+    df['bmi_bin'] = pd.cut(df['bmi'], bins=bmi_bins, labels=False, include_lowest=True)
+    bmi_stroke = df.groupby('bmi_bin')['stroke'].mean().fillna(0)
+    bmi_value = st.slider("BMI", 15.0, 45.0, 24.0, step=0.1, key="bmi_slider")
+    bmi_bin = np.digitize([bmi_value], bmi_bins)[0] - 1
+    bmi_bin = min(max(bmi_bin, 0), 4)
+    img_path = fig_paths[bmi_bin]
+    try:
+        img = Image.open(img_path).convert("RGBA")
+    except Exception as e:
+        st.error(f"Image {img_path} not found. Error: {e}")
+        st.stop()
+    risk = bmi_stroke.iloc[bmi_bin]
+    risk_percent = float(risk) * 100
+    def fill_image_with_water(img, fill_percent):
+        img = img.copy()
+        w, h = img.size
+        mask = Image.new("L", (w, h), 0)
+        water_height = int(h * (fill_percent / 100))
+        draw = ImageDraw.Draw(mask)
+        draw.rectangle([0, h - water_height, w, h], fill=120)
+        blue = Image.new("RGBA", (w, h), (60, 120, 255, 128))
+        img.paste(blue, mask=mask)
+        return img
+    filled_img = fill_image_with_water(img, risk_percent)
+    col1, col2 = st.columns([1,2])
+    with col1:
+        st.image(filled_img, caption=f"{bmi_labels[bmi_bin]} (BMI {bmi_value:.1f}) — Stroke Risk: {risk_percent:.2f}%", use_column_width=True)
+    with col2:
+        st.metric("Stroke Risk % in this BMI group", f"{risk_percent:.2f}%")
+        st.caption("Silhouette morphs by BMI. Blue fill = stroke risk for this group.")
 
-# ---- 3. DEFINE BINS AND IMAGES ----
-bmi_bins = [0, 18.5, 24.9, 29.9, 34.9, 100]
-bmi_labels = ['Underweight', 'Normal', 'Overweight', 'Obese I', 'Obese II+']
-fig_paths = [f"bmi_fig_{i+1}.png" for i in range(5)]  # Images: bmi_fig_1.png ... bmi_fig_5.png
+# ---- 3. SMOKING STATUS SECTION ----
+with st.container():
+    st.header("2. Stroke Risk by Smoking Status and Age Group")
+    smoking_icons = {
+        "never smoked": "cigarette_never.png",
+        "smokes": "cigarette_smokes.png",
+        "formerly smoked": "cigarette_former.png"
+    }
+    age_bins = [0, 18, 40, 60, 82]
+    age_labels = ['Child', 'Young Adult', 'Adult', 'Senior']
+    df['age_group'] = pd.cut(df['age'], bins=age_bins, labels=age_labels, include_lowest=True)
+    stroke_by_group = df.groupby(['smoking_status', 'age_group'])['stroke'].mean().unstack().fillna(0)
+    st.write("Visuals: Full cigarette (never), lit/short (smokes), burnt-out (formerly smoked).")
+    sm_cols = st.columns(3)
+    for idx, status in enumerate(['never smoked', 'smokes', 'formerly smoked']):
+        with sm_cols[idx]:
+            st.image(smoking_icons[status], width=80)
+            st.markdown(f"<center><b>{status.title()}</b></center>", unsafe_allow_html=True)
+            for age_group in stroke_by_group.columns:
+                percent = stroke_by_group.loc[status, age_group]*100
+                bar = "█" * int(percent/3)  # Fun text bar visual
+                st.write(f"{age_group}: {bar} {percent:.2f}%")
 
-df['bmi_bin'] = pd.cut(df['bmi'], bins=bmi_bins, labels=False, include_lowest=True)
-bmi_stroke = df.groupby('bmi_bin')['stroke'].mean().fillna(0)
+# ---- 4. HYPERTENSION "HEART BATTERY" ----
+with st.container():
+    st.header("3. Hypertension: 'Heart Battery' and Stroke Risk")
+    # Create a heart "battery" image in code (or upload heart images per risk level)
+    # Calculate stroke risk by hypertension group
+    hyper_risk = df.groupby('hypertension')['stroke'].mean()
+    colh1, colh2 = st.columns(2)
+    with colh1:
+        # Draw heart icon with fill according to risk %
+        for htn in [0, 1]:
+            risk_pct = hyper_risk[htn] * 100
+            fig, ax = plt.subplots(figsize=(1.4,1.4))
+            t = np.linspace(0, 2*np.pi, 100)
+            x = 16 * np.sin(t) ** 3
+            y = 13 * np.cos(t) - 5 * np.cos(2*t) - 2 * np.cos(3*t) - np.cos(4*t)
+            # Fill heart by stroke risk
+            y_min = y.min()
+            fill_cut = y_min + (y.max() - y_min) * (1 - risk_pct/100)
+            ax.fill_between(x, y, fill_cut, color="#f06292" if htn else "#81c784", alpha=0.8)
+            ax.plot(x, y, color="#333")
+            ax.set_aspect('equal')
+            ax.axis('off')
+            ax.set_title(f"{'No' if htn==0 else 'Yes'} Hypertension\n{risk_pct:.2f}% stroke risk", fontsize=9)
+            st.pyplot(fig)
+    with colh2:
+        st.markdown("**Green heart:** No hypertension (lower risk)<br>**Pink heart:** Has hypertension (higher risk)", unsafe_allow_html=True)
+        st.caption("Heart fills up to the group stroke risk.")
 
-# ---- 4. BMI SLIDER ----
-bmi_value = st.slider("Select BMI", 15.0, 45.0, 24.0, step=0.1)
-bmi_bin = np.digitize([bmi_value], bmi_bins)[0] - 1
-bmi_bin = min(max(bmi_bin, 0), 4)  # Clamp to valid bin range (0-4)
+# ---- 5. AGE GROUP: RISK CURVE ----
+with st.container():
+    st.header("4. Age and Stroke Risk Curve")
+    # Smooth risk curve
+    age_curve = df.groupby('age')['stroke'].mean()
+    fig, ax = plt.subplots(figsize=(5,2))
+    ax.plot(age_curve.index, age_curve.values*100, color="#673ab7", linewidth=3)
+    ax.fill_between(age_curve.index, age_curve.values*100, color="#b39ddb", alpha=0.3)
+    ax.set_xlabel("Age")
+    ax.set_ylabel("Stroke Risk %")
+    ax.set_title("Stroke Risk Increases Sharply With Age")
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    st.pyplot(fig)
 
-# ---- 5. LOAD THE RIGHT IMAGE ----
-img_path = fig_paths[bmi_bin]
-try:
-    img = Image.open(img_path).convert("RGBA")
-except Exception as e:
-    st.error(f"Image {img_path} not found. Error: {e}")
-    st.stop()
+# ---- 6. WORK TYPE: ICON + COLOR BAR ----
+with st.container():
+    st.header("5. Work Type and Stroke Risk")
+    work_icons = {
+        'private': "work_private.png",
+        'self-employed': "work_selfemployed.png",
+        'govt_job': "work_govt.png",
+        'children': "work_children.png",
+        'never_worked': "work_nowork.png"
+    }
+    work_stroke = df.groupby('work_type')['stroke'].mean().sort_values(ascending=False)
+    st.write("Each icon represents a work type. Bars are colored by stroke risk.")
+    wt_cols = st.columns(len(work_stroke))
+    for i, (wt, risk) in enumerate(work_stroke.items()):
+        with wt_cols[i]:
+            iconfile = work_icons.get(wt, "")
+            if iconfile:
+                st.image(iconfile, width=60)
+            col = "#d32f2f" if risk > 0.05 else "#fbc02d" if risk > 0.03 else "#388e3c"
+            st.markdown(f'<div style="width: 40px; height: {int(risk*400)}px; background:{col}; border-radius: 7px; margin-bottom:7px;"></div>', unsafe_allow_html=True)
+            st.caption(f"{wt.title()}<br>{risk*100:.2f}%", unsafe_allow_html=True)
 
-# ---- 6. STROKE RISK FOR THIS BMI BIN ----
-risk = bmi_stroke.iloc[bmi_bin]
-risk_percent = float(risk) * 100
+# ---- 7. GENDER SPLIT ----
+with st.container():
+    st.header("6. Gender and Stroke Risk")
+    gen_risk = df.groupby('gender')['stroke'].mean()
+    gc = st.columns(2)
+    with gc[0]:
+        st.image("gender_male.png", width=70)
+        st.metric("Male Stroke %", f"{gen_risk['male']*100:.2f}")
+    with gc[1]:
+        st.image("gender_female.png", width=70)
+        st.metric("Female Stroke %", f"{gen_risk['female']*100:.2f}")
 
-# ---- 7. DRAW "WATER LEVEL" (STROKE RISK) ON IMAGE ----
-def fill_image_with_water(img, fill_percent):
-    img = img.copy()
-    w, h = img.size
-    mask = Image.new("L", (w, h), 0)
-    # Water level: fill from bottom up according to risk %
-    water_height = int(h * (fill_percent / 100))
-    draw = ImageDraw.Draw(mask)
-    draw.rectangle([0, h - water_height, w, h], fill=120)
-    blue = Image.new("RGBA", (w, h), (60, 120, 255, 128))
-    img.paste(blue, mask=mask)
-    return img
-
-filled_img = fill_image_with_water(img, risk_percent)
-category = bmi_labels[bmi_bin]
-
-# ---- 8. DISPLAY ----
-st.image(filled_img, caption=f"{category} (BMI {bmi_value:.1f}) — Stroke Risk: {risk_percent:.2f}%", use_column_width=False)
-st.caption("Silhouette matches BMI category. Blue fill = stroke probability for this BMI group.")
-
-# ---- 9. OPTIONAL: SHOW STROKE RISK TABLE FOR ALL BINS ----
-with st.expander("Show stroke risk by BMI category"):
-    result = pd.DataFrame({
-        "BMI Category": bmi_labels,
-        "Stroke Risk (%)": [f"{x*100:.2f}" for x in bmi_stroke]
-    })
-    st.table(result)
-
-
+st.markdown("---")
+st.markdown("<center><i>Dashboard by [Your Name] | All visuals use group stroke probability, not individual prediction.</i></center>", unsafe_allow_html=True)
