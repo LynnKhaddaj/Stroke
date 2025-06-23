@@ -237,9 +237,6 @@ with col2:
     st.caption("The silhouette width matches BMI. The colored fill inside represents the group stroke risk at that BMI.")
 
 ## **2. “Smoking” Visual: Cigarette Emoji as Status**
-
-
-```python
 st.title("Smoking Status & Stroke Risk")
 
 def cigarette_svg(lit=False, smoked=False):
