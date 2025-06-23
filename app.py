@@ -12,7 +12,15 @@ df.columns = df.columns.str.strip().str.lower()
 df = df[df['gender'].isin(['male', 'female'])]
 df = df[(df['bmi'] > 10) & (df['bmi'] < 60)]
 df = df[(df['avg_glucose_level'] > 40) & (df['avg_glucose_level'] < 250)]
-
+df = pd.read_csv("healthcare-dataset-stroke-data.csv")
+st.write("Loaded:", df.shape)
+df.columns = df.columns.str.strip().str.lower()
+df = df[df['gender'].isin(['male', 'female'])]
+st.write("After gender filter:", df.shape)
+df = df[(df['bmi'] > 10) & (df['bmi'] < 60)]
+st.write("After BMI filter:", df.shape)
+df = df[(df['avg_glucose_level'] > 40) & (df['avg_glucose_level'] < 250)]
+st.write("After glucose filter:", df.shape)
 # --- Dataset stats ---
 stroke_rate = df['stroke'].mean() * 100
 stroke_count = df['stroke'].sum()
