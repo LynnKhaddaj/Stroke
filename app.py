@@ -315,3 +315,17 @@ category = bmi_labels[bmi_bin]
 
 st.image(filled_img, caption=f"{category} (BMI {bmi_value:.1f}) — Stroke Risk: {risk_percent:.2f}%", use_column_width=False)
 st.caption("Silhouette matches BMI category. Blue fill = stroke probability for this BMI bin.")
+
+import streamlit as st
+import os
+
+st.title("Image Test")
+
+# List files in current directory
+st.write("Files in current directory:", os.listdir("."))
+
+# Try to load and display the first image
+try:
+    st.image("bmi_fig_1.png", caption="Test BMI Image 1", use_column_width=True)
+except Exception as e:
+    st.error(f"Error displaying image: {e}")
