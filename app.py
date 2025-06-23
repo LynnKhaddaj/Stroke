@@ -259,3 +259,57 @@ with col2:
 with col3:
     st.markdown("<center><b>Formerly Smoked</b></center>", unsafe_allow_html=True)
     st.markdown(f"<center>{cigarette_svg(lit=False, smoked=True)}</center>", unsafe_allow_html=True)
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+from PIL import Image, ImageDraw
+
+# ---- Load data and process bins ----
+@st.cache_data
+def load_data():
+    df = pd.read_csv('healthcare-dataset-stroke-data.csv')
+    df = df[df['gender'].isin(['Male', 'Female'])]
+    df = df[df['bmi'] < 60]
+    df = df[df['avg_glucose_level'] < 250]
+    return df
+df = load_data()
+
+# Define 5 bins and images
+bmi_bins = [0, 18.5, 24.9, 29.9, 34.9, 100]
+bmi_labels = ['Underweight', 'Normal', 'Overweight', 'Obese I', 'Obese II+']
+fig_paths = [f"images/bmi_fig_{i+1}.png" for i in range(5)]  # You provide 5 images
+
+df['bmi_bin'] = pd.cut(df['bmi'], bins=bmi_bins, labels=False, include_lowest=True)
+bmi_stroke = df.groupby('bmi_bin')['stroke'].mean().fillna(0)
+
+# User selects BMI
+bmi_value = st.slider("Select BMI", 15.0, 45.0, 24.0, step=0.1)
+bmi_bin = np.digitize([bmi_value], bmi_bins)[0] - 1
+bmi_bin = min(max(bmi_bin, 0), 4)  # Clamp to [0,4]
+
+# Get figure image for the bin
+img_path = fig_paths[bmi_bin]
+img = Image.open(img_path).convert("RGBA")
+
+# Get stroke rate for this BMI bin
+risk = bmi_stroke.iloc[bmi_bin]
+risk_percent = float(risk) * 100
+
+# Draw "water fill" (blue) up to stroke risk %
+def fill_image_with_water(img, fill_percent):
+    img = img.copy()
+    w, h = img.size
+    mask = Image.new("L", (w, h), 0)
+    water_height = int(h * (fill_percent / 100))
+    draw = ImageDraw.Draw(mask)
+    draw.rectangle([0, h - water_height, w, h], fill=120)
+    blue = Image.new("RGBA", (w, h), (60, 120, 255, 128))
+    img.paste(blue, mask=mask)
+    return img
+
+filled_img = fill_image_with_water(img, risk_percent)
+category = bmi_labels[bmi_bin]
+
+st.image(filled_img, caption=f"{category} (BMI {bmi_value:.1f}) — Stroke Risk: {risk_percent:.2f}%", use_column_width=False)
+st.caption("Silhouette matches BMI category. Blue fill = stroke probability for this BMI bin.")
