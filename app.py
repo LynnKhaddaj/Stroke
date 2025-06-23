@@ -140,3 +140,4 @@ stroke_rate_table = df_filtered.groupby(['age_group', 'smoking_status'])['stroke
 st.dataframe(stroke_rate_table)
 
 # --- (Optional) Add more custom visuals below! ---
+
